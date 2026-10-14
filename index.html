@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Głosówka NOVA</title>
+<style>
+  :root { --tlo: #f6f7f9; --karta: #fff; --tekst: #1d2129; --szary: #6b7280; --akcent: #5865f2; --czerwony: #e5484d; --zielony: #2f9e5b; --ramka: #e3e5ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tlo: #16171b; --karta: #1f2126; --tekst: #e8e9ec; --szary: #9aa0aa; --ramka: #30333a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 16px; }
+  main { width: 100%; max-width: 420px; background: var(--karta); border: 1px solid var(--ramka); border-radius: 16px; padding: 24px; text-align: center; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { margin: 8px 0; }
+  .opis { color: var(--szary); font-size: 14px; }
+  button { font: inherit; border: 0; border-radius: 999px; padding: 12px 22px; cursor: pointer; margin: 6px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .glowny { background: var(--akcent); color: #fff; font-weight: 600; }
+  .drugi { background: transparent; color: var(--tekst); border: 1px solid var(--ramka); }
+  #nagrywaj { width: 112px; height: 112px; border-radius: 50%; font-size: 40px; background: var(--czerwony); color: #fff; margin: 16px auto; display: block; }
+  #nagrywaj.trwa { animation: puls 1.4s ease-in-out infinite; }
+  @keyframes puls { 50% { box-shadow: 0 0 0 14px rgba(229, 72, 77, .18); } }
+  #czas { font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 600; }
+  audio { width: 100%; margin: 12px 0; }
+  .blad { color: var(--czerwony); }
+  .ok { color: var(--zielony); font-weight: 600; }
+  blockquote { text-align: left; margin: 12px 0; padding: 8px 12px; border-left: 3px solid var(--ramka); color: var(--szary); white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+  a.przycisk { display: inline-block; text-decoration: none; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎙️ Głosówka</h1>
+  <p class="opis" id="opis">Nagranie trafi do wątku na Discordzie razem z transkrypcją.</p>
+
+  <section id="krok-nagrywanie">
+    <button id="nagrywaj" aria-label="Nagrywaj">●</button>
+    <div id="czas">0:00</div>
+    <p class="opis" id="podpowiedz">Kliknij, żeby zacząć (najwyżej 10 minut).</p>
+  </section>
+
+  <section id="krok-podglad" hidden>
+    <audio id="podglad" controls></audio>
+    <div>
+      <button class="drugi" id="odNowa">Nagraj od nowa</button>
+      <button class="glowny" id="wyslij">Wyślij</button>
+    </div>
+  </section>
+
+  <section id="krok-wynik" hidden>
+    <p id="status"></p>
+    <blockquote id="transkrypcja" hidden></blockquote>
+    <a class="przycisk" id="link" hidden><button class="glowny" tabindex="-1">Otwórz w Discordzie</button></a>
+  </section>
+</main>
+<script>
+  // Token z linku /glosowka (jednorazowy, ważny 15 min) - bez niego n8n odrzuci nagranie.
+  const ADRES = 'https://n8n.novasigns.pl/webhook/glosowka-wyslij';
+  const MAX_S = 600;
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const $ = (id) => document.getElementById(id);
+  let nagrywarka = null, kawalki = [], start = 0, licznik = null, nagranie = null, sekundy = 0, strumien = null;
+
+  // Safari nagrywa tylko MP4/AAC, Firefox OGG, Chrome WebM albo MP4 - bierzemy pierwszy obsługiwany
+  const typ = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm']
+    .find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+
+  const czas = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  function pokaz(krok) {
+    for (const k of ['nagrywanie', 'podglad', 'wynik']) $(`krok-${k}`).hidden = k !== krok;
+  }
+  function wynik(tekst, klasa) {
+    pokaz('wynik');
+    $('status').textContent = tekst;
+    $('status').className = klasa || '';
+  }
+
+  if (!token) wynik('Brak tokenu w linku — w Discordzie użyj /glosowka i otwórz link stamtąd.', 'blad');
+  else if (!navigator.mediaDevices || !window.MediaRecorder) wynik('Ta przeglądarka nie umie nagrywać dźwięku. Otwórz link w Chrome, Safari albo Firefoksie.', 'blad');
+
+  async function zacznij() {
+    try {
+      strumien = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (e) {
+      $('podpowiedz').textContent = 'Brak dostępu do mikrofonu — zezwól na niego w przeglądarce i spróbuj jeszcze raz.';
+      $('podpowiedz').className = 'blad';
+      return;
+    }
+    kawalki = [];
+    nagrywarka = new MediaRecorder(strumien, Object.assign({ audioBitsPerSecond: 64000 }, typ ? { mimeType: typ } : {}));
+    nagrywarka.ondataavailable = (e) => { if (e.data.size) kawalki.push(e.data); };
+    nagrywarka.onstop = () => {
+      strumien.getTracks().forEach((t) => t.stop());
+      nagranie = new Blob(kawalki, { type: nagrywarka.mimeType || typ || 'audio/webm' });
+      $('podglad').src = URL.createObjectURL(nagranie);
+      pokaz('podglad');
+    };
+    nagrywarka.start(1000);
+    start = Date.now();
+    $('nagrywaj').classList.add('trwa');
+    $('nagrywaj').textContent = '■';
+    $('podpowiedz').textContent = 'Nagrywam… kliknij, żeby zakończyć.';
+    $('podpowiedz').className = 'opis';
+    licznik = setInterval(() => {
+      sekundy = (Date.now() - start) / 1000;
+      $('czas').textContent = czas(sekundy);
+      if (sekundy >= MAX_S) zakoncz();
+    }, 250);
+  }
+  function zakoncz() {
+    clearInterval(licznik);
+    sekundy = (Date.now() - start) / 1000;
+    $('nagrywaj').classList.remove('trwa');
+    $('nagrywaj').textContent = '●';
+    if (nagrywarka && nagrywarka.state !== 'inactive') nagrywarka.stop();
+  }
+  $('nagrywaj').onclick = () => (nagrywarka && nagrywarka.state === 'recording' ? zakoncz() : zacznij());
+  $('odNowa').onclick = () => {
+    nagranie = null;
+    $('czas').textContent = '0:00';
+    $('podpowiedz').textContent = 'Kliknij, żeby zacząć (najwyżej 10 minut).';
+    pokaz('nagrywanie');
+  };
+
+  $('wyslij').onclick = async () => {
+    if (!nagranie) return;
+    $('wyslij').disabled = $('odNowa').disabled = true;
+    $('wyslij').textContent = 'Wysyłam i przepisuję…';
+    const dane = new FormData();
+    dane.append('t', token);
+    dane.append('sekundy', String(Math.round(sekundy)));
+    dane.append('plik', nagranie, 'glosowka.' + (/mp4/.test(nagranie.type) ? 'm4a' : /ogg/.test(nagranie.type) ? 'ogg' : 'webm'));
+    try {
+      const odp = await fetch(ADRES, { method: 'POST', body: dane });
+      const json = await odp.json().catch(() => ({}));
+      if (!odp.ok || !json.ok) throw new Error(json.blad || `Serwer odpowiedział ${odp.status}.`);
+      wynik('✅ Głosówka jest w wątku.', 'ok');
+      if (json.transkrypcja) { $('transkrypcja').textContent = json.transkrypcja; $('transkrypcja').hidden = false; }
+      if (json.link) { $('link').href = json.link; $('link').hidden = false; }
+    } catch (e) {
+      // token mógł zostać zużyty - wtedy ponowna wysyłka nic nie da, n8n powie to w komunikacie
+      $('wyslij').disabled = $('odNowa').disabled = false;
+      $('wyslij').textContent = 'Wyślij ponownie';
+      $('opis').textContent = '⚠️ ' + (e.message || 'Nie udało się wysłać.');
+      $('opis').className = 'blad';
+    }
+  };
+</script>
+</body>
+</html>

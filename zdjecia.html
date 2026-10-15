@@ -151,7 +151,8 @@
     for (const m of dane.media) if (!dane.wybrane.includes(m.nr)) $('pozostale').append(kafel(m));
     const opcje = {
       group: 'media', animation: 150, ghostClass: 'widmo', chosenClass: 'wybrany', draggable: '.kafel',
-      delay: 120, delayOnTouchOnly: true, onSort: odswiez, onEnd: () => { koniecPrzeciagania = Date.now(); },
+      // własna obsługa przeciągania zamiast HTML5 drag&drop - to samo zachowanie myszką i palcem, z podglądem pod kursorem
+      forceFallback: true, fallbackTolerance: 4, delay: 120, delayOnTouchOnly: true, onSort: odswiez, onEnd: () => { koniecPrzeciagania = Date.now(); },
     };
     Sortable.create($('post'), { ...opcje, group: { name: 'media', put: () => $('post').querySelectorAll('.kafel').length < max } });
     Sortable.create($('pozostale'), opcje);

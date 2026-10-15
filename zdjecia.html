@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Zdjęcia do posta NOVA</title>
+<style>
+  :root { --tlo: #f6f7f9; --karta: #fff; --tekst: #1d2129; --szary: #6b7280; --akcent: #5865f2; --czerwony: #e5484d; --zielony: #2f9e5b; --ramka: #e3e5ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tlo: #16171b; --karta: #1f2126; --tekst: #e8e9ec; --szary: #9aa0aa; --ramka: #30333a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
+  main { width: 100%; max-width: 760px; margin: 0 auto; background: var(--karta); border: 1px solid var(--ramka); border-radius: 16px; padding: 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 20px 0 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  h2 small { color: var(--szary); font-weight: 400; }
+  p { margin: 6px 0; }
+  .opis { color: var(--szary); font-size: 14px; }
+  .siatka { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; min-height: 112px; padding: 8px;
+    border: 2px dashed var(--ramka); border-radius: 12px; }
+  .kafel { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--ramka); cursor: grab;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .kafel img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .znak { position: absolute; top: 6px; left: 6px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; background: var(--akcent); color: #fff;
+    font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  #pozostale .znak { background: rgba(0, 0, 0, .55); }
+  .okladka { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0, 0, 0, .6); color: #fff; font-size: 12px; text-align: center; padding: 2px; }
+  .film { position: absolute; top: 6px; right: 6px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 12px; border-radius: 8px; padding: 1px 6px; }
+  .widmo { opacity: .35; }
+  .wybrany { outline: 3px solid var(--akcent); }
+  .pusto { grid-column: 1 / -1; align-self: center; text-align: center; color: var(--szary); font-size: 14px; }
+  .pasek { position: sticky; bottom: 0; background: var(--karta); padding: 14px 0 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; border: 0; border-radius: 999px; padding: 12px 22px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .glowny { background: var(--akcent); color: #fff; font-weight: 600; }
+  .blad { color: var(--czerwony); }
+  .ok { color: var(--zielony); font-weight: 600; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>📷 Zdjęcia do posta</h1>
+  <p class="opis" id="tytul">Wczytuję zdjęcia z wątku…</p>
+
+  <section id="edytor" hidden>
+    <p class="opis">Przeciągnij, żeby zmienić kolejność; pierwsze = okładka. Kliknięcie przenosi zdjęcie lub film między sekcjami. Filmy idą na Instagram w karuzeli, a na Facebooka tylko wtedy, gdy wybierzesz to przy akceptacji.</p>
+    <h2>W poście <small id="licznik"></small></h2>
+    <div class="siatka" id="post"></div>
+    <h2>Pozostałe w wątku <small>nie trafią do posta</small></h2>
+    <div class="siatka" id="pozostale"></div>
+    <div class="pasek">
+      <button class="glowny" id="zapisz">Zapisz kolejność</button>
+      <span id="status"></span>
+    </div>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"
+  integrity="sha384-BSxuMLxX+FCbTdYec3TbXlnMGEEM2QXTFdtDaveen71o+jswm2J36+xFqp8k4VHM" crossorigin="anonymous"></script>
+<script>
+  // Klucz z linku „📷 Zdjęcia” (ważny 30 min, tylko ten wątek) - bez niego n8n nic nie pokaże ani nie zapisze.
+  const ADRES = 'https://n8n.novasigns.pl/webhook/social-kolejnosc';
+  const klucz = new URLSearchParams(location.search).get('k') || '';
+  const $ = (id) => document.getElementById(id);
+  let max = 10;
+  let koniecPrzeciagania = 0; // po upuszczeniu przeglądarka potrafi wysłać jeszcze „klik” - nie przenosimy wtedy kafla
+
+  function status(tekst, klasa) {
+    $('status').textContent = tekst;
+    $('status').className = klasa || '';
+  }
+
+  function kafel(m) {
+    const el = document.createElement('div');
+    el.className = 'kafel';
+    el.dataset.nr = m.nr;
+    const img = document.createElement('img');
+    img.alt = `${m.film ? 'Film' : 'Zdjęcie'} ${m.nr}`;
+    img.loading = 'lazy';
+    img.src = m.miniatura || m.url;
+    img.onerror = () => { if (!m.film && img.src !== m.url) img.src = m.url; };
+    el.append(img);
+    const znak = document.createElement('span');
+    znak.className = 'znak';
+    el.append(znak);
+    if (m.film) {
+      const f = document.createElement('span');
+      f.className = 'film';
+      f.textContent = `▶ ${m.czas ? `${m.czas} s` : 'film'}`;
+      el.append(f);
+    }
+    // klik (bez przeciągania) przenosi kafel do drugiej sekcji
+    el.addEventListener('click', () => {
+      if (Date.now() - koniecPrzeciagania < 400) return;
+      const cel = el.parentElement.id === 'post' ? $('pozostale') : $('post');
+      if (cel.id === 'post' && $('post').querySelectorAll('.kafel').length >= max) {
+        status(`W poście może być najwyżej ${max} zdjęć i filmów.`, 'blad');
+        return;
+      }
+      cel.append(el);
+      odswiez();
+    });
+    return el;
+  }
+
+  // numery: w poście miejsce w kolejności (1 = okładka), w pozostałych numer z wątku
+  function odswiez() {
+    const post = [...$('post').querySelectorAll('.kafel')];
+    post.forEach((el, i) => {
+      el.querySelector('.znak').textContent = i + 1;
+      el.querySelector('.okladka')?.remove();
+      if (i === 0) {
+        const o = document.createElement('span');
+        o.className = 'okladka';
+        o.textContent = 'okładka';
+        el.append(o);
+      }
+    });
+    for (const el of $('pozostale').querySelectorAll('.kafel')) {
+      el.querySelector('.znak').textContent = `#${el.dataset.nr}`;
+      el.querySelector('.okladka')?.remove();
+    }
+    for (const id of ['post', 'pozostale']) {
+      const s = $(id);
+      const pusto = s.querySelector('.pusto');
+      const brak = !s.querySelector('.kafel');
+      if (brak && !pusto) {
+        const p = document.createElement('div');
+        p.className = 'pusto';
+        p.textContent = id === 'post' ? 'Przeciągnij tu zdjęcia do posta' : 'Wszystko jest w poście';
+        s.append(p);
+      } else if (!brak && pusto) pusto.remove();
+    }
+    $('licznik').textContent = `${post.length} z ${max}`;
+    $('zapisz').disabled = !post.length;
+    status('');
+  }
+
+  async function wczytaj() {
+    if (!klucz) throw new Error('Brak klucza w linku — kliknij „📷 Zdjęcia” pod propozycją na Discordzie.');
+    const odp = await fetch(`${ADRES}?k=${encodeURIComponent(klucz)}`);
+    const dane = await odp.json().catch(() => ({}));
+    if (!odp.ok || !dane.ok) throw new Error(dane.komunikat || `Serwer odpowiedział ${odp.status}.`);
+    max = dane.max || 10;
+    $('tytul').textContent = `${dane.tytul || 'Post'} · propozycja v${dane.wersja}`;
+    const wgNr = new Map(dane.media.map((m) => [m.nr, m]));
+    for (const nr of dane.wybrane) if (wgNr.has(nr)) $('post').append(kafel(wgNr.get(nr)));
+    for (const m of dane.media) if (!dane.wybrane.includes(m.nr)) $('pozostale').append(kafel(m));
+    const opcje = {
+      group: 'media', animation: 150, ghostClass: 'widmo', chosenClass: 'wybrany', draggable: '.kafel',
+      delay: 120, delayOnTouchOnly: true, onSort: odswiez, onEnd: () => { koniecPrzeciagania = Date.now(); },
+    };
+    Sortable.create($('post'), { ...opcje, group: { name: 'media', put: () => $('post').querySelectorAll('.kafel').length < max } });
+    Sortable.create($('pozostale'), opcje);
+    $('edytor').hidden = false;
+    odswiez();
+  }
+
+  $('zapisz').addEventListener('click', async () => {
+    const kolejnosc = [...$('post').querySelectorAll('.kafel')].map((el) => el.dataset.nr);
+    $('zapisz').disabled = true;
+    status('Zapisuję…');
+    try {
+      // formularz (nie JSON) - prosty request bez zapytania wstępnego CORS
+      const odp = await fetch(ADRES, { method: 'POST', body: new URLSearchParams({ k: klucz, kolejnosc: kolejnosc.join(',') }) });
+      const dane = await odp.json().catch(() => ({}));
+      if (!odp.ok || !dane.ok) throw new Error(dane.komunikat || `Serwer odpowiedział ${odp.status}.`);
+      status(`✅ Zapisane jako v${dane.wersja} — propozycja w wątku zaraz się odświeży.`, 'ok');
+    } catch (e) {
+      status(`⚠️ ${e.message}`, 'blad');
+    } finally {
+      $('zapisz').disabled = false;
+    }
+  });
+
+  wczytaj().catch((e) => { $('tytul').textContent = `⚠️ ${e.message}`; $('tytul').className = 'blad'; });
+</script>
+</body>
+</html>

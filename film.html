@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Montaż filmu NOVA</title>
+<style>
+  :root { --tlo: #f6f7f9; --karta: #fff; --tekst: #1d2129; --szary: #6b7280; --akcent: #5865f2; --czerwony: #e5484d; --zielony: #2f9e5b; --ramka: #e3e5ea; --pole: #f1f2f5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tlo: #16171b; --karta: #1f2126; --tekst: #e8e9ec; --szary: #9aa0aa; --ramka: #30333a; --pole: #2a2d33; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
+  main { width: 100%; max-width: 760px; margin: 0 auto; background: var(--karta); border: 1px solid var(--ramka); border-radius: 16px; padding: 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 8px; }
+  p { margin: 6px 0; }
+  .opis { color: var(--szary); font-size: 14px; }
+  video { width: 100%; max-height: 60vh; background: #000; border-radius: 12px; display: block; }
+  .filmy { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .filmy button { padding: 0; border-radius: 10px; overflow: hidden; width: 84px; height: 84px; flex: 0 0 auto; position: relative; background: var(--ramka); outline-offset: 2px; }
+  .filmy img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .filmy span { position: absolute; left: 4px; bottom: 4px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 11px; border-radius: 6px; padding: 0 5px; }
+  .filmy .aktywny { outline: 3px solid var(--akcent); }
+  .wiersz { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .wiersz label { min-width: 150px; }
+  input[type=range] { flex: 1; min-width: 160px; accent-color: var(--akcent); }
+  input[type=number], input[type=search] { font: inherit; padding: 8px 10px; border: 1px solid var(--ramka); border-radius: 8px; background: var(--pole); color: var(--tekst); }
+  input[type=number] { width: 84px; }
+  input[type=search] { flex: 1; min-width: 180px; }
+  .wartosc { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; color: var(--szary); }
+  button { font: inherit; border: 0; border-radius: 999px; padding: 10px 18px; cursor: pointer; background: var(--pole); color: var(--tekst); }
+  button:disabled { opacity: .5; cursor: default; }
+  .glowny { background: var(--akcent); color: #fff; font-weight: 600; padding: 12px 22px; }
+  .maly { padding: 6px 12px; font-size: 14px; }
+  .zakladki { display: flex; gap: 6px; margin-bottom: 10px; }
+  .zakladki .aktywny { background: var(--akcent); color: #fff; }
+  .lista { border: 1px solid var(--ramka); border-radius: 12px; max-height: 320px; overflow-y: auto; }
+  .utwor { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--ramka); }
+  .utwor:last-child { border-bottom: 0; }
+  .utwor .nazwa { flex: 1; min-width: 0; }
+  .utwor .nazwa b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .utwor .nazwa small { color: var(--szary); }
+  .utwor.wybrany { background: color-mix(in srgb, var(--akcent) 14%, transparent); }
+  .pusto { padding: 16px; text-align: center; color: var(--szary); font-size: 14px; }
+  .muzyka { border: 1px solid var(--ramka); border-radius: 12px; padding: 10px 14px; margin-top: 10px; }
+  .pasek { position: sticky; bottom: 0; background: var(--karta); padding: 14px 0 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .blad { color: var(--czerwony); }
+  .ok { color: var(--zielony); font-weight: 600; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎬 Montaż filmu do posta</h1>
+  <p class="opis" id="tytul">Wczytuję filmy z wątku…</p>
+
+  <section id="edytor" hidden>
+    <div class="filmy" id="filmy"></div>
+    <p class="opis" id="info-filmu"></p>
+    <video id="wideo" controls playsinline preload="metadata"></video>
+    <p class="opis" id="bez-podgladu" hidden>Przeglądarka nie odtwarza tego pliku (np. HEVC z iPhone'a) — montaż i tak zadziała, tylko bez podglądu.</p>
+
+    <h2>✂️ Przycięcie</h2>
+    <div class="wiersz">
+      <label for="start">Początek</label>
+      <input type="range" id="start" min="0" step="0.1" value="0">
+      <span class="wartosc" id="start-w">0:00</span>
+      <button class="maly" id="start-tu">Tu</button>
+    </div>
+    <div class="wiersz">
+      <label for="koniec">Koniec</label>
+      <input type="range" id="koniec" min="0" step="0.1" value="0">
+      <span class="wartosc" id="koniec-w">0:00</span>
+      <button class="maly" id="koniec-tu">Tu</button>
+    </div>
+    <p class="opis">„Tu” ustawia aktualny moment filmu. Podgląd odtwarza tylko wybrany fragment.</p>
+
+    <h2>🔈 Dźwięk z nagrania</h2>
+    <div class="wiersz">
+      <label for="oryginal">Głośność</label>
+      <input type="range" id="oryginal" min="0" max="100" step="5" value="100">
+      <span class="wartosc" id="oryginal-w">100%</span>
+    </div>
+    <div class="wiersz">
+      <label><input type="checkbox" id="odszumianie"> Odszumianie</label>
+      <span class="opis">usuwa szum wiatru i tła (słychać je dopiero w gotowym filmie)</span>
+    </div>
+
+    <h2>🎵 Muzyka</h2>
+    <div class="zakladki">
+      <button id="z-bib" class="aktywny">Biblioteka NOVA</button>
+      <button id="z-net">Szukaj w internecie</button>
+    </div>
+    <div class="wiersz" id="szukajka" hidden>
+      <input type="search" id="fraza" placeholder="np. upbeat, corporate, chill, rock" enterkeyhint="search">
+      <button id="szukaj">Szukaj</button>
+    </div>
+    <p class="opis" id="o-licencji" hidden>Utwory z internetu na licencjach CC0, CC BY albo z domeny publicznej (Openverse). Przy CC BY bot dopisze autora pod postem — wymaga tego licencja.</p>
+    <div class="lista" id="lista"><div class="pusto">Wczytuję…</div></div>
+
+    <div class="muzyka" id="muzyka" hidden>
+      <div class="wiersz"><b id="m-nazwa" style="flex:1"></b><button class="maly" id="m-usun">Bez muzyki</button></div>
+      <div class="wiersz">
+        <label for="m-od">Start w utworze</label>
+        <input type="range" id="m-od" min="0" step="0.5" value="0">
+        <span class="wartosc" id="m-od-w">0:00</span>
+      </div>
+      <div class="wiersz">
+        <label for="m-gl">Głośność muzyki</label>
+        <input type="range" id="m-gl" min="0" max="100" step="5" value="80">
+        <span class="wartosc" id="m-gl-w">80%</span>
+      </div>
+      <div class="wiersz">
+        <label>Płynne wejście / wyjście</label>
+        <input type="number" id="m-we" min="0" max="10" step="0.5" value="1"> s
+        <input type="number" id="m-wy" min="0" max="10" step="0.5" value="2"> s
+      </div>
+    </div>
+
+    <div class="pasek">
+      <button class="glowny" id="zapisz">Zmontuj film</button>
+      <span id="status"></span>
+    </div>
+  </section>
+</main>
+<audio id="podklad" preload="none"></audio>
+<script>
+  // Klucz z linku „🎬 Film” (ważny 30 min, tylko ten wątek) - bez niego n8n nic nie pokaże ani nie zapisze.
+  const BAZA = 'https://n8n.novasigns.pl/webhook/';
+  const klucz = new URLSearchParams(location.search).get('k') || '';
+  const $ = (id) => document.getElementById(id);
+  const wideo = $('wideo');
+  const podklad = $('podklad');
+  let filmy = [];
+  let film = null;
+  let utwory = [];
+  let muzyka = null; // wybrany utwór
+  let odsluch = null; // utwór odtwarzany z listy (bez filmu)
+
+  const mmss = (s) => { s = Math.max(0, Math.floor(Number(s) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const liczba = (id) => Number($(id).value) || 0;
+  function status(tekst, klasa) { $('status').textContent = tekst; $('status').className = klasa || ''; }
+
+  async function pobierz(sciezka, parametry) {
+    const odp = await fetch(`${BAZA}${sciezka}?${new URLSearchParams({ k: klucz, ...parametry })}`);
+    if (!odp.ok) throw new Error(`HTTP ${odp.status}`);
+    return odp.json();
+  }
+
+  // ── filmy ──
+  function wybierzFilm(f) {
+    film = f;
+    for (const b of $('filmy').children) b.classList.toggle('aktywny', b.dataset.a === f.a);
+    $('info-filmu').textContent = `Film nr ${f.nr}${f.czas ? ` · ${mmss(f.czas)}` : ''}${f.wybrany ? ' · w poście' : ' · nie jest w poście (dodaj go „📷 Zdjęcia”)'}${f.montaz ? ' · ma już montaż — nowy zastąpi poprzedni (zaczynamy od oryginału)' : ''}`;
+    $('bez-podgladu').hidden = true;
+    wideo.src = f.url;
+    ustawZakres(f.czas || 0);
+  }
+  function ustawZakres(czas) {
+    for (const id of ['start', 'koniec']) $(id).max = czas || 0;
+    $('start').value = 0;
+    $('koniec').value = czas || 0;
+    pokazZakres();
+  }
+  function pokazZakres() {
+    if (liczba('koniec') && liczba('koniec') <= liczba('start')) $('koniec').value = Math.min(Number($('koniec').max), liczba('start') + 1);
+    $('start-w').textContent = mmss(liczba('start'));
+    $('koniec-w').textContent = mmss(liczba('koniec'));
+  }
+  wideo.addEventListener('loadedmetadata', () => {
+    // czas z Discorda bywa zaokrąglony albo pusty - dokładny podaje odtwarzacz
+    if (Number.isFinite(wideo.duration) && Math.abs(wideo.duration - Number($('start').max)) > 0.5) ustawZakres(Math.round(wideo.duration * 10) / 10);
+  });
+  wideo.addEventListener('error', () => { $('bez-podgladu').hidden = false; });
+  $('start').addEventListener('input', () => { pokazZakres(); wideo.currentTime = liczba('start'); });
+  $('koniec').addEventListener('input', () => { pokazZakres(); wideo.currentTime = Math.max(liczba('start'), liczba('koniec') - 2); });
+  $('start-tu').onclick = () => { $('start').value = wideo.currentTime.toFixed(1); pokazZakres(); };
+  $('koniec-tu').onclick = () => { $('koniec').value = wideo.currentTime.toFixed(1); pokazZakres(); };
+
+  // ── podgląd: film w zakresie + muzyka zsynchronizowana z filmem ──
+  const glosnoscOryginalu = () => liczba('oryginal') / 100;
+  $('oryginal').addEventListener('input', () => { $('oryginal-w').textContent = `${$('oryginal').value}%`; wideo.volume = glosnoscOryginalu(); });
+  function glosnoscMuzyki(t) {
+    // wejście i wyjście jak w ffmpeg (afade) - liniowo
+    const dl = (liczba('koniec') || wideo.duration || 0) - liczba('start');
+    const we = liczba('m-we'), wy = liczba('m-wy');
+    let g = liczba('m-gl') / 100;
+    if (we > 0 && t < we) g *= t / we;
+    if (wy > 0 && dl - t < wy) g *= Math.max(0, (dl - t) / wy);
+    return Math.max(0, Math.min(1, g));
+  }
+  function synchronizuj(wymus) {
+    if (!muzyka) return;
+    const t = wideo.currentTime - liczba('start');
+    const cel = liczba('m-od') + Math.max(0, t);
+    if (wymus || Math.abs(podklad.currentTime - cel) > 0.3) podklad.currentTime = cel;
+    podklad.volume = glosnoscMuzyki(Math.max(0, t));
+  }
+  wideo.addEventListener('play', () => {
+    if (wideo.currentTime < liczba('start') || (liczba('koniec') && wideo.currentTime >= liczba('koniec'))) wideo.currentTime = liczba('start');
+    if (muzyka) { odsluch = null; podklad.src !== muzyka.url && (podklad.src = muzyka.url); synchronizuj(true); podklad.play().catch(() => {}); }
+  });
+  wideo.addEventListener('pause', () => { if (muzyka) podklad.pause(); });
+  wideo.addEventListener('seeked', () => synchronizuj(true));
+  wideo.addEventListener('timeupdate', () => {
+    if (liczba('koniec') && wideo.currentTime >= liczba('koniec')) { wideo.pause(); wideo.currentTime = liczba('start'); }
+    synchronizuj(false);
+  });
+
+  // ── muzyka: biblioteka i wyszukiwarka ──
+  function zakladka(net) {
+    $('z-bib').classList.toggle('aktywny', !net);
+    $('z-net').classList.toggle('aktywny', net);
+    $('szukajka').hidden = !net;
+    $('o-licencji').hidden = !net;
+    if (net) { pokazListe([], 'Wpisz, czego szukasz — najlepiej po angielsku.'); $('fraza').focus(); } else wczytajMuzyke('');
+  }
+  $('z-bib').onclick = () => zakladka(false);
+  $('z-net').onclick = () => zakladka(true);
+  $('szukaj').onclick = () => wczytajMuzyke($('fraza').value.trim());
+  $('fraza').addEventListener('keydown', (e) => { if (e.key === 'Enter') wczytajMuzyke($('fraza').value.trim()); });
+
+  async function wczytajMuzyke(q) {
+    pokazListe([], q ? 'Szukam…' : 'Wczytuję bibliotekę…');
+    try {
+      const d = await pobierz('social-muzyka', q ? { q } : {});
+      if (!d.ok) throw new Error(d.komunikat || 'błąd');
+      pokazListe(d.utwory || [], d.komunikat);
+    } catch (err) {
+      pokazListe([], `Nie udało się wczytać muzyki (${err.message}).`);
+    }
+  }
+  function pokazListe(lista, komunikat) {
+    utwory = lista;
+    const el = $('lista');
+    el.replaceChildren();
+    if (!lista.length) {
+      const p = document.createElement('div');
+      p.className = 'pusto';
+      p.textContent = komunikat || 'Brak utworów.';
+      el.append(p);
+      return;
+    }
+    for (const u of lista) {
+      const w = document.createElement('div');
+      w.className = `utwor${muzyka && muzyka.id === u.id ? ' wybrany' : ''}`;
+      const graj = document.createElement('button');
+      graj.className = 'maly';
+      graj.textContent = '▶';
+      graj.title = 'Odsłuch';
+      graj.onclick = () => odsluchaj(u, graj);
+      const nazwa = document.createElement('div');
+      nazwa.className = 'nazwa';
+      const b = document.createElement('b');
+      b.textContent = u.tytul;
+      const s = document.createElement('small');
+      s.textContent = [u.autor, u.licencja, u.czas ? mmss(u.czas) : ''].filter(Boolean).join(' · ');
+      nazwa.append(b, s);
+      const wybierz = document.createElement('button');
+      wybierz.className = 'maly';
+      wybierz.textContent = muzyka && muzyka.id === u.id ? 'Wybrany' : 'Wybierz';
+      wybierz.onclick = () => wybierzMuzyke(u);
+      w.append(graj, nazwa, wybierz);
+      el.append(w);
+    }
+  }
+  function odsluchaj(u, przycisk) {
+    wideo.pause();
+    if (odsluch === u && !podklad.paused) { podklad.pause(); przycisk.textContent = '▶'; return; }
+    for (const b of $('lista').querySelectorAll('.utwor button:first-child')) b.textContent = '▶';
+    odsluch = u;
+    podklad.src = u.url;
+    podklad.volume = 1;
+    podklad.play().then(() => { przycisk.textContent = '⏸'; }).catch(() => status('Przeglądarka nie odtwarza tego utworu.', 'blad'));
+  }
+  function wybierzMuzyke(u) {
+    podklad.pause();
+    odsluch = null;
+    muzyka = u;
+    podklad.src = u.url;
+    $('muzyka').hidden = false;
+    $('m-nazwa').textContent = `🎵 ${u.tytul}${u.autor ? ` – ${u.autor}` : ''}${u.licencja ? ` (${u.licencja})` : ''}`;
+    $('m-od').max = Math.max(0, (u.czas || 600) - 1);
+    $('m-od').value = 0;
+    $('m-od-w').textContent = '0:00';
+    pokazListe(utwory);
+    status('Odtwórz film, żeby usłyszeć podkład.', '');
+  }
+  $('m-usun').onclick = () => { muzyka = null; podklad.pause(); $('muzyka').hidden = true; pokazListe(utwory); };
+  $('m-od').addEventListener('input', () => { $('m-od-w').textContent = mmss(liczba('m-od')); synchronizuj(true); });
+  $('m-gl').addEventListener('input', () => { $('m-gl-w').textContent = `${$('m-gl').value}%`; synchronizuj(false); });
+
+  // ── zapis: n8n sprawdza i wrzuca zlecenie do wątku, montuje bot ──
+  $('zapisz').onclick = async () => {
+    if (!film) return;
+    const dane = {
+      a: film.a, start: liczba('start'), koniec: liczba('koniec') >= Number($('koniec').max) - 0.05 ? 0 : liczba('koniec'),
+      oryginal: glosnoscOryginalu(), odszumianie: $('odszumianie').checked,
+      muzyka: muzyka ? { id: muzyka.id, od: liczba('m-od'), glosnosc: liczba('m-gl') / 100, wejscie: liczba('m-we'), wyjscie: liczba('m-wy') } : null,
+    };
+    if (!dane.odszumianie && dane.oryginal === 1 && !dane.muzyka && !dane.start && !dane.koniec) {
+      status('Nic nie zmieniono — wybierz muzykę, przytnij film albo włącz odszumianie.', 'blad');
+      return;
+    }
+    $('zapisz').disabled = true;
+    status('Wysyłam…');
+    try {
+      const odp = await fetch(`${BAZA}social-montaz`, { method: 'POST', body: new URLSearchParams({ k: klucz, dane: JSON.stringify(dane) }) });
+      const d = await odp.json().catch(() => ({}));
+      if (!odp.ok || !d.ok) throw new Error(d.komunikat || `HTTP ${odp.status}`);
+      wideo.pause();
+      status('✅ Zlecone — gotowy film pojawi się w wątku na Discordzie za 1–2 minuty, a propozycja posta odświeży się sama. Możesz zamknąć tę stronę.', 'ok');
+    } catch (err) {
+      status(`⚠️ ${err.message}`, 'blad');
+      $('zapisz').disabled = false;
+    }
+  };
+
+  // ── start ──
+  (async () => {
+    if (!/^[0-9a-f]{24}$/.test(klucz)) { $('tytul').textContent = 'Ten link jest nieprawidłowy — kliknij „🎬 Film” pod propozycją jeszcze raz.'; return; }
+    try {
+      const d = await pobierz('social-film', {});
+      if (!d.ok) { $('tytul').textContent = d.komunikat || 'Nie udało się wczytać filmów.'; return; }
+      filmy = d.filmy || [];
+      $('tytul').textContent = d.tytul || '';
+      if (!filmy.length) { $('tytul').textContent = d.komunikat || 'W tym wątku nie ma filmów.'; return; }
+      for (const f of filmy) {
+        const b = document.createElement('button');
+        b.dataset.a = f.a;
+        b.title = `Film ${f.nr}`;
+        const img = document.createElement('img');
+        img.src = f.miniatura || '';
+        img.alt = `Film ${f.nr}`;
+        const s = document.createElement('span');
+        s.textContent = `${f.nr}${f.montaz ? ' ✂️' : ''}`;
+        b.append(img, s);
+        b.onclick = () => wybierzFilm(f);
+        $('filmy').append(b);
+      }
+      $('filmy').hidden = filmy.length < 2;
+      $('edytor').hidden = false;
+      wybierzFilm(filmy.find((f) => f.wybrany) || filmy[0]);
+      wczytajMuzyke('');
+    } catch (err) {
+      $('tytul').textContent = `Nie udało się wczytać filmów (${err.message}).`;
+    }
+  })();
+</script>
+</body>
+</html>

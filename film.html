@@ -94,8 +94,8 @@
       <button id="z-bib" class="aktywny">Biblioteka NOVA</button>
       <button id="z-net">Szukaj w internecie</button>
     </div>
-    <div class="wiersz" id="szukajka" hidden>
-      <input type="search" id="fraza" placeholder="np. upbeat, corporate, chill, rock" enterkeyhint="search">
+    <div class="wiersz" id="szukajka">
+      <input type="search" id="fraza" placeholder="np. energetic, chill, hip hop, cinematic" enterkeyhint="search">
       <button id="szukaj">Szukaj</button>
     </div>
     <p class="opis" id="o-licencji" hidden>Utwory z internetu na licencjach CC0, CC BY albo z domeny publicznej (Openverse). Przy CC BY bot dopisze autora pod postem — wymaga tego licencja.</p>
@@ -139,6 +139,7 @@
   let utwory = [];
   let muzyka = null; // wybrany utwór
   let odsluch = null; // utwór odtwarzany z listy (bez filmu)
+  let zrodlo = 'biblioteka'; // zakładka: biblioteka NOVA (tysiące utworów z Meta Sound Collection) albo internet (Openverse)
 
   const mmss = (s) => { s = Math.max(0, Math.floor(Number(s) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const liczba = (id) => Number($(id).value) || 0;
@@ -212,10 +213,11 @@
 
   // ── muzyka: biblioteka i wyszukiwarka ──
   function zakladka(net) {
+    zrodlo = net ? 'internet' : 'biblioteka';
     $('z-bib').classList.toggle('aktywny', !net);
     $('z-net').classList.toggle('aktywny', net);
-    $('szukajka').hidden = !net;
     $('o-licencji').hidden = !net;
+    $('fraza').value = '';
     if (net) { pokazListe([], 'Wpisz, czego szukasz — najlepiej po angielsku.'); $('fraza').focus(); } else wczytajMuzyke('');
   }
   $('z-bib').onclick = () => zakladka(false);
@@ -224,11 +226,13 @@
   $('fraza').addEventListener('keydown', (e) => { if (e.key === 'Enter') wczytajMuzyke($('fraza').value.trim()); });
 
   async function wczytajMuzyke(q) {
+    if (zrodlo === 'internet' && !q) { pokazListe([], 'Wpisz, czego szukasz — najlepiej po angielsku.'); return; }
     pokazListe([], q ? 'Szukam…' : 'Wczytuję bibliotekę…');
     try {
-      const d = await pobierz('social-muzyka', q ? { q } : {});
+      const d = await pobierz('social-muzyka', { zrodlo, ...(q ? { q } : {}) });
       if (!d.ok) throw new Error(d.komunikat || 'błąd');
       pokazListe(d.utwory || [], d.komunikat);
+      if (d.komunikat && (d.utwory || []).length) status(d.komunikat, '');
     } catch (err) {
       pokazListe([], `Nie udało się wczytać muzyki (${err.message}).`);
     }
@@ -257,7 +261,7 @@
       const b = document.createElement('b');
       b.textContent = u.tytul;
       const s = document.createElement('small');
-      s.textContent = [u.autor, u.licencja, u.czas ? mmss(u.czas) : ''].filter(Boolean).join(' · ');
+      s.textContent = [u.autor, u.czas ? mmss(u.czas) : '', (u.tagi || []).slice(0, 4).join(', '), zrodlo === 'internet' ? u.licencja : ''].filter(Boolean).join(' · ');
       nazwa.append(b, s);
       const wybierz = document.createElement('button');
       wybierz.className = 'maly';

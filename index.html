@@ -36,7 +36,7 @@
 <body>
 <main>
   <h1>🎙️ Głosówka</h1>
-  <p class="opis" id="opis">Nagranie trafi do wątku na Discordzie razem z transkrypcją.</p>
+  <p class="opis" id="opis">Po nagraniu wybierzesz: wiadomość w wątku (z transkrypcją) albo polecenie dla /ai.</p>
 
   <section id="krok-nagrywanie">
     <button id="nagrywaj" aria-label="Nagrywaj">●</button>
@@ -47,9 +47,10 @@
   <section id="krok-podglad" hidden>
     <audio id="podglad" controls></audio>
     <div>
-      <button class="drugi" id="odNowa">Nagraj od nowa</button>
-      <button class="glowny" id="wyslij">Wyślij</button>
+      <button class="glowny" id="wyslij">📨 Wyślij jako wiadomość</button>
+      <button class="glowny" id="doAi">🤖 Wykonaj przez /ai</button>
     </div>
+    <div><button class="drugi" id="odNowa">Nagraj od nowa</button></div>
   </section>
 
   <section id="krok-wynik" hidden>
@@ -127,29 +128,37 @@
     pokaz('nagrywanie');
   };
 
-  $('wyslij').onclick = async () => {
+  // tryb 'ai': n8n tylko przepisuje, a bot uruchamia /ai z tekstem w prywatnej odpowiedzi na /glosowka (nic nie idzie do wątku)
+  const przyciski = ['wyslij', 'doAi', 'odNowa'];
+  const etykiety = { wyslij: '📨 Wyślij jako wiadomość', doAi: '🤖 Wykonaj przez /ai' };
+  async function wyslij(tryb) {
     if (!nagranie) return;
-    $('wyslij').disabled = $('odNowa').disabled = true;
-    $('wyslij').textContent = 'Wysyłam i przepisuję…';
+    const id = tryb === 'ai' ? 'doAi' : 'wyslij';
+    przyciski.forEach((p) => { $(p).disabled = true; });
+    $(id).textContent = 'Wysyłam i przepisuję…';
     const dane = new FormData();
     dane.append('t', token);
+    dane.append('tryb', tryb);
     dane.append('sekundy', String(Math.round(sekundy)));
     dane.append('plik', nagranie, 'glosowka.' + (/mp4/.test(nagranie.type) ? 'm4a' : /ogg/.test(nagranie.type) ? 'ogg' : 'webm'));
     try {
       const odp = await fetch(ADRES, { method: 'POST', body: dane });
       const json = await odp.json().catch(() => ({}));
       if (!odp.ok || !json.ok) throw new Error(json.blad || `Serwer odpowiedział ${odp.status}.`);
-      wynik('✅ Głosówka jest w wątku.', 'ok');
+      wynik(json.ai ? '✅ Wysłane do /ai — odpowiedź (albo zmiany do zatwierdzenia) zobaczysz w Discordzie, widoczną tylko dla Ciebie.'
+        : '✅ Głosówka jest w wątku.', 'ok');
       if (json.transkrypcja) { $('transkrypcja').textContent = json.transkrypcja; $('transkrypcja').hidden = false; }
       if (json.link) { $('link').href = json.link; $('link').hidden = false; }
     } catch (e) {
       // token mógł zostać zużyty - wtedy ponowna wysyłka nic nie da, n8n powie to w komunikacie
-      $('wyslij').disabled = $('odNowa').disabled = false;
-      $('wyslij').textContent = 'Wyślij ponownie';
+      przyciski.forEach((p) => { $(p).disabled = false; });
+      $(id).textContent = etykiety[id];
       $('opis').textContent = '⚠️ ' + (e.message || 'Nie udało się wysłać.');
       $('opis').className = 'blad';
     }
-  };
+  }
+  $('wyslij').onclick = () => wyslij('wiadomosc');
+  $('doAi').onclick = () => wyslij('ai');
 </script>
 </body>
 </html>

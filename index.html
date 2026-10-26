@@ -116,7 +116,7 @@
   function pokaz(krok) {
     for (const k of ['nagrywanie', 'podglad', 'czekaj', 'sprawdz', 'wynik']) $(`krok-${k}`).hidden = k !== krok;
     document.querySelector('main').classList.toggle('szeroki', krok === 'sprawdz');
-    $('opis').hidden = krok === 'sprawdz';
+    $('opis').hidden = krok === 'sprawdz' || krok === 'wynik';
   }
   function wynik(tekst, klasa, link) {
     pokaz('wynik');

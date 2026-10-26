@@ -2,8 +2,11 @@
 
 Nagrywarka głosówek dla komendy `/glosowka` bota Discord NOVA Signs (statyczna strona na GitHub Pages).
 Bot daje zarządowi jednorazowy link `?t=<token>` (ważny 15 min); strona nagrywa dźwięk w przeglądarce i wysyła go do
-webhooka n8n (`glosowka-wyslij`), który przepisuje nagranie (Whisper). Po nagraniu wybierasz:
-- **📨 Wyślij jako wiadomość** — nagranie z transkrypcją trafia do wątku na Discordzie,
+webhooka n8n (`glosowka-wyslij`, automatyzacja 27). Po nagraniu wybierasz:
+- **📝 Dalej: sprawdź i opublikuj** (`tryb=szkic`) — n8n przepisuje nagranie (Whisper) i od 45 s robi podsumowanie AI;
+  strona pokazuje podsumowanie i transkrypcję do poprawki, a **✅ Opublikuj** (`akcja=opublikuj`, z tym samym nagraniem)
+  wrzuca do wątku podsumowanie, nagranie i `transkrypcja.txt`. Szkic czeka 24 h: nagranie trzyma IndexedDB, poprawki
+  localStorage, a ten sam link (`akcja=odczyt`) otwiera szkic ponownie,
 - **🤖 Wykonaj przez /ai** (`tryb=ai`) — do wątku nic nie trafia; bot bierze transkrypcję jako polecenie `/ai`
   i pokazuje odpowiedź (albo zmiany do zatwierdzenia) tylko wywołującemu.
 

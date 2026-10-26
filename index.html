@@ -14,6 +14,7 @@
   body { margin: 0; min-height: 100vh; background: var(--tlo); color: var(--tekst); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     display: flex; align-items: center; justify-content: center; padding: 16px; }
   main { width: 100%; max-width: 420px; background: var(--karta); border: 1px solid var(--ramka); border-radius: 16px; padding: 24px; text-align: center; }
+  main.szeroki { max-width: 720px; text-align: left; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   p { margin: 8px 0; }
   .opis { color: var(--szary); font-size: 14px; }
@@ -30,13 +31,25 @@
   .ok { color: var(--zielony); font-weight: 600; }
   blockquote { text-align: left; margin: 12px 0; padding: 8px 12px; border-left: 3px solid var(--ramka); color: var(--szary); white-space: pre-wrap; max-height: 40vh; overflow: auto; }
   a.przycisk { display: inline-block; text-decoration: none; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  textarea { width: 100%; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--tekst); background: var(--tlo);
+    border: 1px solid var(--ramka); border-radius: 10px; padding: 10px 12px; resize: vertical; }
+  textarea:focus { outline: 2px solid var(--akcent); outline-offset: 1px; }
+  #podsumowanie { min-height: 260px; }
+  #transkrypcjaPole { min-height: 220px; }
+  details { margin-top: 12px; border: 1px solid var(--ramka); border-radius: 10px; padding: 8px 12px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .licznik { color: var(--szary); font-size: 13px; text-align: right; margin-top: 2px; }
+  .licznik.za-duzo { color: var(--czerwony); font-weight: 600; }
+  .akcje { text-align: center; margin-top: 16px; }
+  .maly { font-size: 13px; padding: 6px 12px; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <main>
   <h1>🎙️ Głosówka</h1>
-  <p class="opis" id="opis">Po nagraniu wybierzesz: wiadomość w wątku (z transkrypcją) albo polecenie dla /ai.</p>
+  <p class="opis" id="opis">Po nagraniu sprawdzisz i poprawisz transkrypcję i podsumowanie, zanim trafią do wątku. Albo wyślesz nagranie jako polecenie dla /ai.</p>
 
   <section id="krok-nagrywanie">
     <button id="nagrywaj" aria-label="Nagrywaj">●</button>
@@ -47,10 +60,36 @@
   <section id="krok-podglad" hidden>
     <audio id="podglad" controls></audio>
     <div>
-      <button class="glowny" id="wyslij">📨 Wyślij jako wiadomość</button>
-      <button class="glowny" id="doAi">🤖 Wykonaj przez /ai</button>
+      <button class="glowny" id="wyslij">📝 Dalej: sprawdź i opublikuj</button>
+      <button class="drugi" id="doAi">🤖 Wykonaj przez /ai</button>
     </div>
     <div><button class="drugi" id="odNowa">Nagraj od nowa</button></div>
+  </section>
+
+  <section id="krok-czekaj" hidden>
+    <p id="czekajTekst">Przepisuję i podsumowuję… (zwykle do pół minuty)</p>
+  </section>
+
+  <section id="krok-sprawdz" hidden>
+    <p class="opis">Sprawdź i popraw — w wątku nic jeszcze nie ma. Poprawki zapisują się w tej przeglądarce; szkic czeka do <span id="wazneDo"></span>.</p>
+    <div id="blokPodsumowania">
+      <label for="podsumowanie">📝 Podsumowanie</label>
+      <textarea id="podsumowanie" spellcheck="true"></textarea>
+      <div class="licznik" id="licznikPodsumowania"></div>
+    </div>
+    <p class="opis" id="bezPodsumowaniaInfo" hidden>Krótkie nagranie — bez podsumowania, do wątku trafi transkrypcja.</p>
+    <details id="szczegoly">
+      <summary>📄 Transkrypcja (oryginał)</summary>
+      <textarea id="transkrypcjaPole" spellcheck="true"></textarea>
+      <div class="licznik"><button class="drugi maly" id="przywroc" type="button">Przywróć oryginał</button></div>
+    </details>
+    <audio id="odsluch" controls hidden></audio>
+    <p class="opis" id="bezNagrania" hidden>Nagranie zostało na urządzeniu, na którym nagrywałeś — głosówka pójdzie bez pliku dźwiękowego.</p>
+    <div class="akcje">
+      <button class="glowny" id="opublikuj">✅ Opublikuj</button>
+      <button class="drugi" id="opublikujBez">Opublikuj bez podsumowania</button>
+    </div>
+    <p id="bladPublikacji" class="blad" hidden></p>
   </section>
 
   <section id="krok-wynik" hidden>
@@ -65,7 +104,9 @@
   const MAX_S = 600;
   const token = new URLSearchParams(location.search).get('t') || '';
   const $ = (id) => document.getElementById(id);
+  const MAX_PODSUMOWANIA = 1700; // n8n przycina dluzsze, zeby zmiescilo sie w jednej wiadomosci Discorda
   let nagrywarka = null, kawalki = [], start = 0, licznik = null, nagranie = null, sekundy = 0, strumien = null;
+  let oryginal = '';
 
   // Safari nagrywa tylko MP4/AAC, Firefox OGG, Chrome WebM albo MP4 - bierzemy pierwszy obsługiwany
   const typ = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm']
@@ -73,16 +114,131 @@
 
   const czas = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   function pokaz(krok) {
-    for (const k of ['nagrywanie', 'podglad', 'wynik']) $(`krok-${k}`).hidden = k !== krok;
+    for (const k of ['nagrywanie', 'podglad', 'czekaj', 'sprawdz', 'wynik']) $(`krok-${k}`).hidden = k !== krok;
+    document.querySelector('main').classList.toggle('szeroki', krok === 'sprawdz');
+    $('opis').hidden = krok === 'sprawdz';
   }
-  function wynik(tekst, klasa) {
+  function wynik(tekst, klasa, link) {
     pokaz('wynik');
     $('status').textContent = tekst;
     $('status').className = klasa || '';
+    if (link) { $('link').href = link; $('link').hidden = false; }
+  }
+
+  // Szkic przezywa odswiezenie strony: nagranie w IndexedDB (localStorage nie zmiesci kilku MB), poprawki w localStorage.
+  // n8n nie przechowuje nagrania miedzy wywolaniami, wiec przy publikacji strona wysyla je jeszcze raz.
+  const KLUCZ = 'glosowka:' + token;
+  function bazaNagran() {
+    return new Promise((ok, zle) => {
+      const r = indexedDB.open('nova-glosowka', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('nagrania');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => zle(r.error);
+    });
+  }
+  async function zapiszNagranie(blob) {
+    try {
+      const db = await bazaNagran();
+      await new Promise((ok, zle) => { const t = db.transaction('nagrania', 'readwrite'); t.objectStore('nagrania').put(blob, token); t.oncomplete = ok; t.onerror = () => zle(t.error); });
+    } catch (e) { /* bez kopii - publikacja z tej karty i tak ma nagranie w pamieci */ }
+  }
+  async function wczytajNagranie() {
+    try {
+      const db = await bazaNagran();
+      return await new Promise((ok) => { const r = db.transaction('nagrania').objectStore('nagrania').get(token); r.onsuccess = () => ok(r.result || null); r.onerror = () => ok(null); });
+    } catch (e) { return null; }
+  }
+  async function usunNagranie() {
+    try { const db = await bazaNagran(); db.transaction('nagrania', 'readwrite').objectStore('nagrania').delete(token); } catch (e) { /* nic */ }
+    try { localStorage.removeItem(KLUCZ); } catch (e) { /* nic */ }
+  }
+  function zapiszPoprawki() {
+    try { localStorage.setItem(KLUCZ, JSON.stringify({ podsumowanie: $('podsumowanie').value, transkrypcja: $('transkrypcjaPole').value })); } catch (e) { /* nic */ }
+  }
+  function poprawki() {
+    try { return JSON.parse(localStorage.getItem(KLUCZ) || 'null'); } catch (e) { return null; }
+  }
+
+  async function zapytaj(pola) {
+    const dane = new FormData();
+    dane.append('t', token);
+    for (const [k, v] of Object.entries(pola)) if (v !== undefined && v !== null) dane.append(k, v);
+    const odp = await fetch(ADRES, { method: 'POST', body: dane });
+    const json = await odp.json().catch(() => ({}));
+    if (!odp.ok || !json.ok) { const e = new Error(json.blad || `Serwer odpowiedział ${odp.status}.`); e.link = json.link; throw e; }
+    return json;
+  }
+  function rozszerzenie(blob) {
+    return /mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
+  }
+
+  function licz() {
+    const n = $('podsumowanie').value.trim().length;
+    $('licznikPodsumowania').textContent = `${n} / ${MAX_PODSUMOWANIA} znaków` + (n > MAX_PODSUMOWANIA ? ' — za długie, koniec zostanie ucięty' : '');
+    $('licznikPodsumowania').className = 'licznik' + (n > MAX_PODSUMOWANIA ? ' za-duzo' : '');
+  }
+  function pokazSzkic(s) {
+    oryginal = s.transkrypcja || '';
+    const zapisane = poprawki();
+    $('podsumowanie').value = zapisane ? zapisane.podsumowanie : (s.podsumowanie || '');
+    $('transkrypcjaPole').value = zapisane ? zapisane.transkrypcja : oryginal;
+    const maPodsumowanie = !!(s.podsumowanie || (zapisane && zapisane.podsumowanie));
+    $('blokPodsumowania').hidden = !maPodsumowanie;
+    $('bezPodsumowaniaInfo').hidden = maPodsumowanie;
+    $('opublikujBez').hidden = !maPodsumowanie;
+    $('szczegoly').open = !maPodsumowanie;
+    if (!oryginal) $('bezPodsumowaniaInfo').textContent = '⚠️ Nie udało się przepisać nagrania — wpisz treść sam albo opublikuj samo nagranie.';
+    $('wazneDo').textContent = s.wazneDo ? new Date(s.wazneDo).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'jutra';
+    $('odsluch').hidden = !nagranie;
+    if (nagranie) $('odsluch').src = URL.createObjectURL(nagranie);
+    $('bezNagrania').hidden = !!nagranie;
+    licz();
+    pokaz('sprawdz');
+  }
+
+  async function opublikuj(bezPodsumowania) {
+    const przyciski = ['opublikuj', 'opublikujBez'];
+    przyciski.forEach((p) => { $(p).disabled = true; });
+    const id = bezPodsumowania ? 'opublikujBez' : 'opublikuj';
+    const etykieta = $(id).textContent;
+    $(id).textContent = 'Publikuję…';
+    $('bladPublikacji').hidden = true;
+    try {
+      const dane = { akcja: 'opublikuj', podsumowanie: $('podsumowanie').value, transkrypcja: $('transkrypcjaPole').value, bezPodsumowania: bezPodsumowania ? 'tak' : '' };
+      if (nagranie) dane.plik = new File([nagranie], 'glosowka.' + rozszerzenie(nagranie), { type: nagranie.type });
+      const json = await zapytaj(dane);
+      await usunNagranie();
+      wynik('✅ Głosówka jest w wątku.', 'ok', json.link);
+    } catch (e) {
+      if (e.link) { await usunNagranie(); wynik('✅ ' + e.message, 'ok', e.link); return; }
+      przyciski.forEach((p) => { $(p).disabled = false; });
+      $(id).textContent = etykieta;
+      $('bladPublikacji').textContent = '⚠️ ' + (e.message || 'Nie udało się opublikować.') + ' Poprawki są zapisane — spróbuj jeszcze raz.';
+      $('bladPublikacji').hidden = false;
+    }
+  }
+  $('opublikuj').onclick = () => opublikuj(false);
+  $('opublikujBez').onclick = () => opublikuj(true);
+  $('podsumowanie').oninput = () => { licz(); zapiszPoprawki(); };
+  $('transkrypcjaPole').oninput = zapiszPoprawki;
+  $('przywroc').onclick = () => { $('transkrypcjaPole').value = oryginal; zapiszPoprawki(); };
+
+  // Link otwarty ponownie (odswiezenie, inna karta, powrot z Discorda): stan z n8n decyduje, co pokazac.
+  async function wczytajStan() {
+    let s;
+    try { s = await zapytaj({ akcja: 'odczyt' }); } catch (e) {
+      if (/nieznany|wygasł|użyty/.test(e.message || '')) { wynik(e.message, 'blad'); return; }
+      return; // np. chwilowy blad sieci - zostaje nagrywanie, wysylka i tak sprawdzi token
+    }
+    if (s.stan === 'szkic') { nagranie = await wczytajNagranie(); pokazSzkic(s); return; }
+    if (s.stan === 'przepisuje') { pokaz('czekaj'); setTimeout(wczytajStan, 3000); return; }
+    if (s.stan === 'opublikowano') { wynik('✅ Ta głosówka jest już w wątku.', 'ok', s.link); return; }
+    if (s.stan === 'wyslano') { wynik(s.ai ? '✅ To nagranie poszło do /ai — odpowiedź jest w Discordzie.' : '✅ To nagranie jest już w wątku.', 'ok'); return; }
   }
 
   if (!token) wynik('Brak tokenu w linku — w Discordzie użyj /glosowka i otwórz link stamtąd.', 'blad');
   else if (!navigator.mediaDevices || !window.MediaRecorder) wynik('Ta przeglądarka nie umie nagrywać dźwięku. Otwórz link w Chrome, Safari albo Firefoksie.', 'blad');
+  else wczytajStan();
 
   async function zacznij() {
     try {
@@ -128,28 +284,24 @@
     pokaz('nagrywanie');
   };
 
+  // tryb 'szkic': n8n przepisuje i podsumowuje, a do watku trafia dopiero po "Opublikuj";
   // tryb 'ai': n8n tylko przepisuje, a bot uruchamia /ai z tekstem w prywatnej odpowiedzi na /glosowka (nic nie idzie do wątku)
   const przyciski = ['wyslij', 'doAi', 'odNowa'];
-  const etykiety = { wyslij: '📨 Wyślij jako wiadomość', doAi: '🤖 Wykonaj przez /ai' };
+  const etykiety = { wyslij: '📝 Dalej: sprawdź i opublikuj', doAi: '🤖 Wykonaj przez /ai' };
   async function wyslij(tryb) {
     if (!nagranie) return;
     const id = tryb === 'ai' ? 'doAi' : 'wyslij';
     przyciski.forEach((p) => { $(p).disabled = true; });
-    $(id).textContent = 'Wysyłam i przepisuję…';
-    const dane = new FormData();
-    dane.append('t', token);
-    dane.append('tryb', tryb);
-    dane.append('sekundy', String(Math.round(sekundy)));
-    dane.append('plik', nagranie, 'glosowka.' + (/mp4/.test(nagranie.type) ? 'm4a' : /ogg/.test(nagranie.type) ? 'ogg' : 'webm'));
+    $(id).textContent = tryb === 'ai' ? 'Wysyłam i przepisuję…' : 'Przepisuję i podsumowuję…';
+    if (tryb === 'szkic') { await zapiszNagranie(nagranie); pokaz('czekaj'); }
     try {
-      const odp = await fetch(ADRES, { method: 'POST', body: dane });
-      const json = await odp.json().catch(() => ({}));
-      if (!odp.ok || !json.ok) throw new Error(json.blad || `Serwer odpowiedział ${odp.status}.`);
+      const json = await zapytaj({ tryb, sekundy: String(Math.round(sekundy)), plik: new File([nagranie], 'glosowka.' + rozszerzenie(nagranie), { type: nagranie.type }) });
+      if (json.szkic) { pokazSzkic(json); return; }
       wynik(json.ai ? '✅ Wysłane do /ai — odpowiedź (albo zmiany do zatwierdzenia) zobaczysz w Discordzie, widoczną tylko dla Ciebie.'
-        : '✅ Głosówka jest w wątku.', 'ok');
+        : '✅ Głosówka jest w wątku.', 'ok', json.link);
       if (json.transkrypcja) { $('transkrypcja').textContent = json.transkrypcja; $('transkrypcja').hidden = false; }
-      if (json.link) { $('link').href = json.link; $('link').hidden = false; }
     } catch (e) {
+      if (tryb === 'szkic') pokaz('podglad');
       // token mógł zostać zużyty - wtedy ponowna wysyłka nic nie da, n8n powie to w komunikacie
       przyciski.forEach((p) => { $(p).disabled = false; });
       $(id).textContent = etykiety[id];
@@ -157,7 +309,7 @@
       $('opis').className = 'blad';
     }
   }
-  $('wyslij').onclick = () => wyslij('wiadomosc');
+  $('wyslij').onclick = () => wyslij('szkic');
   $('doAi').onclick = () => wyslij('ai');
 </script>
 </body>
